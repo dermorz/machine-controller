@@ -57,6 +57,7 @@ const (
 	CloudProviderLinode              CloudProvider = "linode"
 	CloudProviderNutanix             CloudProvider = "nutanix"
 	CloudProviderOpenstack           CloudProvider = "openstack"
+	CloudProviderProxmox             CloudProvider = "proxmox"
 	CloudProviderVsphere             CloudProvider = "vsphere"
 	CloudProviderVMwareCloudDirector CloudProvider = "vmware-cloud-director"
 	CloudProviderFake                CloudProvider = "fake"

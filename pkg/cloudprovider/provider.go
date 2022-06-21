@@ -105,6 +105,9 @@ var (
 		providerconfigtypes.CloudProviderNutanix: func(cvr *providerconfig.ConfigVarResolver) cloudprovidertypes.Provider {
 			return nutanix.New(cvr)
 		},
+		providerconfigtypes.CloudProviderProxmox: func(cvr *providerconfig.ConfigVarResolver) cloudprovidertypes.Provider {
+			return proxmox.New(cvr)
+		},
 		providerconfigtypes.CloudProviderVMwareCloudDirector: func(cvr *providerconfig.ConfigVarResolver) cloudprovidertypes.Provider {
 			return vcd.New(cvr)
 		},
