@@ -145,12 +145,18 @@ func (*provider) AddDefaults(spec clusterv1alpha1.MachineSpec) (clusterv1alpha1.
 func (p *provider) Validate(ctx context.Context, spec clusterv1alpha1.MachineSpec) error {
 	config, _, _, err := p.getConfig(spec.ProviderSpec)
 	if err != nil {
-		return fmt.Errorf("failed to parse machineSpec: %w", err)
+		return cloudprovidererrors.TerminalError{
+			Reason:  common.InvalidConfigurationMachineError,
+			Message: fmt.Sprintf("failed to parse machineSpec: %v", err),
+		}
 	}
 
 	client, err := GetClientSet(config)
 	if err != nil {
-		return fmt.Errorf("failed to construct client: %w", err)
+		return cloudprovidererrors.TerminalError{
+			Reason:  common.InvalidConfigurationMachineError,
+			Message: fmt.Sprintf("failed to construct client: %v", err),
+		}
 	}
 
 	// Verify client can connect to API
@@ -158,7 +164,7 @@ func (p *provider) Validate(ctx context.Context, spec clusterv1alpha1.MachineSpe
 	if err != nil {
 		return cloudprovidererrors.TerminalError{
 			Reason:  common.InvalidConfigurationMachineError,
-			Message: err.Error(),
+			Message: fmt.Sprintf("cannot connect to proxmox API: %v", err),
 		}
 	}
 
