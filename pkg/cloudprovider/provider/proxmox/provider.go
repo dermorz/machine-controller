@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/Telmate/proxmox-api-go/proxmox"
 	"github.com/kubermatic/machine-controller/pkg/apis/cluster/common"
 	clusterv1alpha1 "github.com/kubermatic/machine-controller/pkg/apis/cluster/v1alpha1"
 	cloudprovidererrors "github.com/kubermatic/machine-controller/pkg/cloudprovider/errors"
@@ -40,6 +41,8 @@ type Config struct {
 	Token       string
 	TLSInsecure bool
 	ProxyURL    string
+
+	NodeName     string
 }
 
 type provider struct {
@@ -188,8 +191,76 @@ func (provider *provider) GetCloudConfig(spec clusterv1alpha1.MachineSpec) (conf
 }
 
 // Create creates a cloud instance according to the given machine
-func (provider *provider) Create(ctx context.Context, machine *clusterv1alpha1.Machine, data *cloudprovidertypes.ProviderData, userdata string) (instance.Instance, error) {
-	panic("not implemented") // TODO: Implement
+func (p *provider) Create(ctx context.Context, machine *clusterv1alpha1.Machine, data *cloudprovidertypes.ProviderData, userdata string) (instance.Instance, error) {
+	config, _, _, err := p.getConfig(machine.Spec.ProviderSpec)
+	if err != nil {
+		return nil, cloudprovidererrors.TerminalError{
+			Reason:  common.InvalidConfigurationMachineError,
+			Message: fmt.Sprintf("failed to parse machineSpec: %v", err),
+		}
+	}
+
+	c, err := GetClientSet(config)
+	if err != nil {
+		return nil, cloudprovidererrors.TerminalError{
+			Reason:  common.InvalidConfigurationMachineError,
+			Message: fmt.Sprintf("failed to construct client: %v", err),
+		}
+	}
+
+	vmID, err := c.GetNextID(0)
+	if err != nil {
+		return nil, cloudprovidererrors.TerminalError{
+			Reason:  common.InvalidConfigurationMachineError,
+			Message: fmt.Sprintf("failed to get next available VM ID: %v", err),
+		}
+	}
+
+	configQemu := proxmox.ConfigQemu{
+		VmID: vmID,
+
+		QemuIso: "local:iso/ubuntu-22.04-live-server-amd64.iso",
+		QemuOs:  "l26",
+
+		// TODO(moritz): Config values for machine settings!
+		Memory: 2048,
+
+		QemuCpu:     "host",
+		QemuSockets: 1,
+		QemuCores:   1,
+		QemuVcpus:   1,
+
+		QemuDisks: proxmox.QemuDevices{
+			0: {
+				"type":         "virtio",
+				"storage":      "local",
+				"storage_type": "dir",
+				"size":         "30G",
+				"backup":       false,
+			},
+		},
+
+		QemuNetworks: proxmox.QemuDevices{
+			0: {
+				"id":     0,
+				"model":  "virtio",
+				"bridge": "nat",
+			},
+		},
+	}
+
+	vmr := proxmox.NewVmRef(vmID)
+	vmr.SetNode(config.NodeName)
+
+	err = configQemu.CreateVm(vmr, c.Client)
+	if err != nil {
+		return nil, cloudprovidererrors.TerminalError{
+			Reason:  common.InvalidConfigurationMachineError,
+			Message: fmt.Sprintf("failed to create VM: %v", err),
+		}
+	}
+
+	return nil, nil
 }
 
 // Cleanup will delete the instance associated with the machine and all associated resources.

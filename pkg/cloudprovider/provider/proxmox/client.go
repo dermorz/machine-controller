@@ -28,7 +28,7 @@ const (
 )
 
 type ClientSet struct {
-	Client *proxmox.Client
+	*proxmox.Client
 }
 
 func GetClientSet(config *Config) (*ClientSet, error) {
@@ -55,7 +55,5 @@ func GetClientSet(config *Config) (*ClientSet, error) {
 
 	client.SetAPIToken(config.UserID, config.Token)
 
-	return &ClientSet{
-		Client: client,
-	}, nil
+	return &ClientSet{client}, nil
 }
