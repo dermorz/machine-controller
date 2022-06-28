@@ -221,6 +221,7 @@ func (p *provider) Create(ctx context.Context, machine *clusterv1alpha1.Machine,
 	}
 
 	configQemu := proxmox.ConfigQemu{
+		Name:  machine.Name,
 		Agent: enabled,
 		VmID:  vmID,
 
@@ -255,6 +256,8 @@ func (p *provider) Create(ctx context.Context, machine *clusterv1alpha1.Machine,
 				"bridge": "vmbr0",
 			},
 		},
+
+		// TODO: userdata -> cloud-init
 	}
 
 	vmr := proxmox.NewVmRef(vmID)
@@ -269,8 +272,8 @@ func (p *provider) Create(ctx context.Context, machine *clusterv1alpha1.Machine,
 		}
 	}
 
-	server := &Server{}
-
+	// TODO: extract to func getIPs()
+	addresses := map[string]corev1.NodeAddressType{}
 	netInterfaces, err := c.GetVmAgentNetworkInterfaces(vmr)
 	if err != nil {
 		return nil, cloudprovidererrors.TerminalError{
@@ -282,12 +285,17 @@ func (p *provider) Create(ctx context.Context, machine *clusterv1alpha1.Machine,
 		for _, ipAddr := range netIf.IPAddresses {
 			if len(ipAddr) > 0 {
 				ip := ipAddr.String()
-				server.addresses[ip] = corev1.NodeInternalIP
+				addresses[ip] = corev1.NodeInternalIP
 			}
 		}
 	}
 
-	return server, nil
+	return &Server{
+		id:        fmt.Sprintf("node-%s-vm-%d", vmr.Node(), vmr.VmId()),
+		name:      configQemu.Name,
+		status:    instance.StatusRunning,
+		addresses: addresses,
+	}, nil
 }
 
 // Cleanup will delete the instance associated with the machine and all associated resources.
