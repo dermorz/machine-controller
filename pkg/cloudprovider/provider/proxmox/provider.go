@@ -264,6 +264,7 @@ func (p *provider) Create(ctx context.Context, machine *clusterv1alpha1.Machine,
 	vmr.SetNode(config.NodeName)
 
 	// CreateVm polls the creation task until it has completed.
+	// It also cleans up created disks on failed VM creation.
 	err = configQemu.CreateVm(vmr, c.Client)
 	if err != nil {
 		return nil, cloudprovidererrors.TerminalError{
@@ -302,8 +303,41 @@ func (p *provider) Create(ctx context.Context, machine *clusterv1alpha1.Machine,
 // If all resources have been cleaned up, true will be returned.
 // In case the cleanup involves asynchronous deletion of resources & those resources are not gone yet,
 // false should be returned. This is to indicate that the cleanup is not done, but needs to be called again at a later point
-func (provider *provider) Cleanup(ctx context.Context, machine *clusterv1alpha1.Machine, data *cloudprovidertypes.ProviderData) (bool, error) {
-	panic("not implemented") // TODO: Implement
+func (p *provider) Cleanup(ctx context.Context, machine *clusterv1alpha1.Machine, data *cloudprovidertypes.ProviderData) (bool, error) {
+	config, _, _, err := p.getConfig(machine.Spec.ProviderSpec)
+	if err != nil {
+		return false, cloudprovidererrors.TerminalError{
+			Reason:  common.InvalidConfigurationMachineError,
+			Message: fmt.Sprintf("failed to parse machineSpec: %v", err),
+		}
+	}
+
+	c, err := GetClientSet(config)
+	if err != nil {
+		return false, cloudprovidererrors.TerminalError{
+			Reason:  common.InvalidConfigurationMachineError,
+			Message: fmt.Sprintf("failed to construct client: %v", err),
+		}
+	}
+
+	vmr, err := c.GetVmRefByName(machine.Name)
+	if err != nil {
+		if cloudprovidererrors.IsNotFound(err) {
+			// VM is already gone
+			return true, nil
+		}
+		return false, err
+	}
+
+	params := map[string]interface{}{
+		// Clean all disks matching this VM ID even not referenced in the current VM config.
+		"destroy-unreferenced-disks": true,
+		// Remove all traces of this VM ID (backup, replication, HA)
+		"purge": true,
+	}
+	exitStatus, err := c.DeleteVmParams(vmr, params)
+
+	return exitStatus == exitStatusSuccess, err
 }
 
 // MachineMetricsLabels returns labels used for the Prometheus metrics
