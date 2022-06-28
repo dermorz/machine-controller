@@ -35,6 +35,10 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
+const (
+	enabled = 1
+)
+
 type Config struct {
 	Endpoint    string
 	UserID      string
@@ -217,34 +221,38 @@ func (p *provider) Create(ctx context.Context, machine *clusterv1alpha1.Machine,
 	}
 
 	configQemu := proxmox.ConfigQemu{
-		VmID: vmID,
+		Agent: enabled,
+		VmID:  vmID,
 
+		// TODO: config.Image
 		QemuIso: "local:iso/ubuntu-22.04-live-server-amd64.iso",
-		QemuOs:  "l26",
+		// For now only Linux 2.6 is supported
+		QemuOs: "l26",
 
-		// TODO(moritz): Config values for machine settings!
+		// TODO: config.Memory
 		Memory: 2048,
 
-		QemuCpu:     "host",
+		QemuCpu: "host",
+		// TODO: confog.CPUSockets
 		QemuSockets: 1,
-		QemuCores:   1,
-		QemuVcpus:   1,
+		// TODO: config.CPUCores
+		QemuCores: 1,
 
 		QemuDisks: proxmox.QemuDevices{
 			0: {
-				"type":         "virtio",
-				"storage":      "local",
-				"storage_type": "dir",
-				"size":         "30G",
-				"backup":       false,
+				"type":    "scsi",
+				"storage": "local-lvm",
+				// TODO: Config.DiskSizeGB
+				"size":   "30G",
+				"backup": false,
 			},
 		},
 
+		// TODO: Figure out correct network settings
 		QemuNetworks: proxmox.QemuDevices{
 			0: {
-				"id":     0,
-				"model":  "virtio",
-				"bridge": "nat",
+				"model":  "e1000",
+				"bridge": "vmbr0",
 			},
 		},
 	}
@@ -252,15 +260,34 @@ func (p *provider) Create(ctx context.Context, machine *clusterv1alpha1.Machine,
 	vmr := proxmox.NewVmRef(vmID)
 	vmr.SetNode(config.NodeName)
 
+	// CreateVm polls the creation task until it has completed.
 	err = configQemu.CreateVm(vmr, c.Client)
 	if err != nil {
 		return nil, cloudprovidererrors.TerminalError{
-			Reason:  common.InvalidConfigurationMachineError,
+			Reason:  common.CreateMachineError,
 			Message: fmt.Sprintf("failed to create VM: %v", err),
 		}
 	}
 
-	return nil, nil
+	server := &Server{}
+
+	netInterfaces, err := c.GetVmAgentNetworkInterfaces(vmr)
+	if err != nil {
+		return nil, cloudprovidererrors.TerminalError{
+			Reason:  common.CreateMachineError,
+			Message: fmt.Sprintf("failed to get network interfaces: %v", err),
+		}
+	}
+	for _, netIf := range netInterfaces {
+		for _, ipAddr := range netIf.IPAddresses {
+			if len(ipAddr) > 0 {
+				ip := ipAddr.String()
+				server.addresses[ip] = corev1.NodeInternalIP
+			}
+		}
+	}
+
+	return server, nil
 }
 
 // Cleanup will delete the instance associated with the machine and all associated resources.
