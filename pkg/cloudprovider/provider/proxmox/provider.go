@@ -54,10 +54,10 @@ type provider struct {
 }
 
 type Server struct {
-	name      string
-	id        string
-	status    instance.Status
-	addresses map[string]corev1.NodeAddressType
+	configQemu *proxmox.ConfigQemu
+	vmRef      *proxmox.VmRef
+	status     instance.Status
+	addresses  map[string]corev1.NodeAddressType
 }
 
 // Ensures that Server implements Instance interface.
@@ -68,12 +68,12 @@ var _ cloudprovidertypes.Provider = &provider{}
 
 // Name returns the instance name.
 func (server *Server) Name() string {
-	return server.name
+	return server.configQemu.Name
 }
 
 // ID returns the instance identifier.
 func (server *Server) ID() string {
-	return server.id
+	return fmt.Sprintf("node-%s-vm-%d", server.vmRef.Node(), server.vmRef.VmId())
 }
 
 // Addresses returns a list of addresses associated with the instance.
@@ -220,7 +220,7 @@ func (p *provider) Create(ctx context.Context, machine *clusterv1alpha1.Machine,
 		}
 	}
 
-	configQemu := proxmox.ConfigQemu{
+	configQemu := &proxmox.ConfigQemu{
 		Name:  machine.Name,
 		Agent: enabled,
 		VmID:  vmID,
@@ -257,6 +257,9 @@ func (p *provider) Create(ctx context.Context, machine *clusterv1alpha1.Machine,
 			},
 		},
 
+		QemuKVM:     true,
+		QemuVlanTag: -1,
+
 		// TODO: userdata -> cloud-init
 	}
 
@@ -292,10 +295,10 @@ func (p *provider) Create(ctx context.Context, machine *clusterv1alpha1.Machine,
 	}
 
 	return &Server{
-		id:        fmt.Sprintf("node-%s-vm-%d", vmr.Node(), vmr.VmId()),
-		name:      configQemu.Name,
-		status:    instance.StatusRunning,
-		addresses: addresses,
+		vmRef:      vmr,
+		configQemu: configQemu,
+		addresses:  addresses,
+		status:     instance.StatusRunning,
 	}, nil
 }
 
