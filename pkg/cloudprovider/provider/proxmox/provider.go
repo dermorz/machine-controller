@@ -46,7 +46,13 @@ type Config struct {
 	TLSInsecure bool
 	ProxyURL    string
 
-	NodeName     string
+	NodeName string
+
+	CPUSockets   int64
+	CPUCores     *int64
+	MemoryMB     int64
+	DiskSizeGB   int64
+	BridgeDevice *string
 }
 
 type provider struct {
@@ -110,34 +116,42 @@ func (p *provider) getConfig(provSpec clusterv1alpha1.ProviderSpec) (*Config, *p
 		return nil, nil, nil, err
 	}
 
-	c := Config{}
+	config := Config{}
 
-	c.Endpoint, err = p.configVarResolver.GetConfigVarStringValueOrEnv(rawConfig.Endpoint, "PM_API_URL")
+	config.Endpoint, err = p.configVarResolver.GetConfigVarStringValueOrEnv(rawConfig.Endpoint, "PM_API_URL")
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
-	c.UserID, err = p.configVarResolver.GetConfigVarStringValueOrEnv(rawConfig.UserID, "PM_API_USER_ID")
+	config.UserID, err = p.configVarResolver.GetConfigVarStringValueOrEnv(rawConfig.UserID, "PM_API_USER_ID")
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
-	c.Token, err = p.configVarResolver.GetConfigVarStringValueOrEnv(rawConfig.UserID, "PM_API_TOKEN")
+	config.Token, err = p.configVarResolver.GetConfigVarStringValueOrEnv(rawConfig.UserID, "PM_API_TOKEN")
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
-	c.TLSInsecure, err = p.configVarResolver.GetConfigVarBoolValueOrEnv(rawConfig.AllowInsecure, "PM_TLS_INSECURE")
+	config.TLSInsecure, err = p.configVarResolver.GetConfigVarBoolValueOrEnv(rawConfig.AllowInsecure, "PM_TLS_INSECURE")
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
-	c.ProxyURL, err = p.configVarResolver.GetConfigVarStringValueOrEnv(rawConfig.ProxyURL, "PM_PROXY_URL")
+	config.ProxyURL, err = p.configVarResolver.GetConfigVarStringValueOrEnv(rawConfig.ProxyURL, "PM_PROXY_URL")
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
-	return &c, pconfig, rawConfig, nil
+	config.NodeName, err = p.configVarResolver.GetConfigVarStringValueOrEnv(rawConfig.NodeName, "PM_NODE_NAME")
+
+	config.CPUCores = rawConfig.CPUCores
+	config.CPUSockets = rawConfig.CPUSockets
+	config.MemoryMB = rawConfig.MemoryMB
+	config.DiskSizeGB = rawConfig.DiskSizeGB
+	config.BridgeDevice = rawConfig.BridgeDevice
+
+	return &config, pconfig, rawConfig, nil
 }
 
 // AddDefaults will read the MachineSpec and apply defaults for provider specific fields
@@ -158,7 +172,7 @@ func (p *provider) Validate(ctx context.Context, spec clusterv1alpha1.MachineSpe
 		}
 	}
 
-	client, err := GetClientSet(config)
+	c, err := GetClientSet(config)
 	if err != nil {
 		return cloudprovidererrors.TerminalError{
 			Reason:  common.InvalidConfigurationMachineError,
@@ -167,11 +181,31 @@ func (p *provider) Validate(ctx context.Context, spec clusterv1alpha1.MachineSpe
 	}
 
 	// Verify client can connect to API
-	_, err = client.Client.GetVersion()
+	_, err = c.GetVersion()
 	if err != nil {
 		return cloudprovidererrors.TerminalError{
 			Reason:  common.InvalidConfigurationMachineError,
 			Message: fmt.Sprintf("cannot connect to proxmox API: %v", err),
+		}
+	}
+
+	nodes, err := c.GetNodeList()
+	if err != nil {
+		return cloudprovidererrors.TerminalError{
+			Reason:  common.InvalidConfigurationMachineError,
+			Message: fmt.Sprintf("cannot fetch nodes from cluster: %v", err),
+		}
+	}
+	var nodeExists bool
+	for _, n := range nodes["data"].([]map[string]interface{}) {
+		if n["node"] == config.NodeName {
+			nodeExists = nodeExists || true
+		}
+	}
+	if !nodeExists {
+		return cloudprovidererrors.TerminalError{
+			Reason:  common.InvalidConfigurationMachineError,
+			Message: fmt.Sprintf("node %q does not exist", config.NodeName),
 		}
 	}
 

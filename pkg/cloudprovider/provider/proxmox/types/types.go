@@ -27,6 +27,14 @@ type RawConfig struct {
 	Token         providerconfigtypes.ConfigVarString `json:"token"`
 	AllowInsecure providerconfigtypes.ConfigVarBool   `json:"allowInsecure"`
 	ProxyURL      providerconfigtypes.ConfigVarString `json:"proxyURL,omitempty"`
+
+	NodeName providerconfigtypes.ConfigVarString `json:"nodeName"`
+
+	CPUSockets   int64   `json:"cpuSockets"`
+	CPUCores     *int64  `json:"cpuCores,omitempty"`
+	MemoryMB     int64   `json:"memoryMB"`
+	DiskSizeGB   int64   `json:"diskSizeGB"`
+	BridgeDevice *string `json:"bridgeDevice,omitempty"`
 }
 
 func GetConfig(pconfig providerconfigtypes.Config) (*RawConfig, error) {
