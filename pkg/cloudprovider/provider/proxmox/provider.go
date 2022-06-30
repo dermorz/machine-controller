@@ -18,6 +18,7 @@ package proxmox
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -189,17 +190,31 @@ func (p *provider) Validate(ctx context.Context, spec clusterv1alpha1.MachineSpe
 		}
 	}
 
-	nodes, err := c.GetNodeList()
+	nodeList, err := c.GetNodeList()
 	if err != nil {
 		return cloudprovidererrors.TerminalError{
 			Reason:  common.InvalidConfigurationMachineError,
 			Message: fmt.Sprintf("cannot fetch nodes from cluster: %v", err),
 		}
 	}
+
 	var nodeExists bool
-	for _, n := range nodes["data"].([]map[string]interface{}) {
-		if n["node"] == config.NodeName {
-			nodeExists = nodeExists || true
+
+	var nl proxmoxtypes.NodeList
+
+	nodeListJson, err := json.Marshal(nodeList)
+	if err != nil {
+		return fmt.Errorf("marshalling nodeList to JSON: %w", err)
+	}
+	err = json.Unmarshal(nodeListJson, &nl)
+	if err != nil {
+		return fmt.Errorf("unmarshalling JSON to NodeList: %w", err)
+	}
+
+	for _, n := range nl.Data {
+		if n.Node == config.NodeName {
+			nodeExists = true
+			break
 		}
 	}
 	if !nodeExists {

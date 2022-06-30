@@ -42,3 +42,22 @@ func GetConfig(pconfig providerconfigtypes.Config) (*RawConfig, error) {
 
 	return rawConfig, jsonutil.StrictUnmarshal(pconfig.CloudProviderSpec.Raw, rawConfig)
 }
+
+// NodeList represents the response body of GET /api2/json/nodes.
+type NodeList struct {
+	Data []struct {
+		ID             string  `json:"id"`
+		Uptime         int     `json:"uptime"`
+		Maxdisk        int64   `json:"maxdisk"`
+		Status         string  `json:"status"`
+		CPU            float64 `json:"cpu"`
+		Maxmem         int     `json:"maxmem"`
+		Type           string  `json:"type"`
+		Disk           int64   `json:"disk"`
+		Mem            int     `json:"mem"`
+		Maxcpu         int     `json:"maxcpu"`
+		SslFingerprint string  `json:"ssl_fingerprint"`
+		Node           string  `json:"node"`
+		Level          string  `json:"level"`
+	} `json:"data"`
+}
