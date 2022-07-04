@@ -49,11 +49,12 @@ type Config struct {
 
 	NodeName string
 
-	CPUSockets   int64
-	CPUCores     *int64
-	MemoryMB     int64
-	DiskSizeGB   int64
+	CPUSockets   *int
+	CPUCores     *int
+	MemoryMB     int
+	DiskSizeGB   int
 	BridgeDevice *string
+	ImageName    string
 }
 
 type provider struct {
@@ -151,6 +152,7 @@ func (p *provider) getConfig(provSpec clusterv1alpha1.ProviderSpec) (*Config, *p
 	config.MemoryMB = rawConfig.MemoryMB
 	config.DiskSizeGB = rawConfig.DiskSizeGB
 	config.BridgeDevice = rawConfig.BridgeDevice
+	config.ImageName = rawConfig.ImageName
 
 	return &config, pconfig, rawConfig, nil
 }
@@ -224,6 +226,8 @@ func (p *provider) Validate(ctx context.Context, spec clusterv1alpha1.MachineSpe
 		}
 	}
 
+	// TODO: Verify image exists
+
 	return nil
 }
 
@@ -269,32 +273,33 @@ func (p *provider) Create(ctx context.Context, machine *clusterv1alpha1.Machine,
 		}
 	}
 
+	var imageLocation string
+
+	// TODO: set imageLocation from config.ImageName and storage?
+
 	configQemu := &proxmox.ConfigQemu{
 		Name:  machine.Name,
 		Agent: enabled,
 		VmID:  vmID,
 
-		// TODO: config.Image
-		QemuIso: "local:iso/ubuntu-22.04-live-server-amd64.iso",
+		QemuIso: config.ImageName,
 		// For now only Linux 2.6 is supported
 		QemuOs: "l26",
 
-		// TODO: config.Memory
-		Memory: 2048,
+		Memory: config.MemoryMB,
 
-		QemuCpu: "host",
-		// TODO: confog.CPUSockets
-		QemuSockets: 1,
-		// TODO: config.CPUCores
-		QemuCores: 1,
+		QemuCpu:     "host",
+		QemuSockets: *config.CPUSockets,
+		QemuCores:   *config.CPUCores,
 
+		// Add disk created from cloud image.
 		QemuDisks: proxmox.QemuDevices{
 			0: {
-				"type":    "scsi",
-				"storage": "local-lvm",
-				// TODO: Config.DiskSizeGB
-				"size":   "30G",
-				"backup": false,
+				"volume":      "local:0",
+				"import-from": imageLocation,
+				"type":        "virtio-scsi-pci",
+				"storage":     "local",
+				"backup":      false,
 			},
 		},
 
@@ -308,8 +313,6 @@ func (p *provider) Create(ctx context.Context, machine *clusterv1alpha1.Machine,
 
 		QemuKVM:     true,
 		QemuVlanTag: -1,
-
-		// TODO: userdata -> cloud-init
 	}
 
 	vmr := proxmox.NewVmRef(vmID)
@@ -325,21 +328,12 @@ func (p *provider) Create(ctx context.Context, machine *clusterv1alpha1.Machine,
 		}
 	}
 
-	// TODO: extract to func getIPs()
-	addresses := map[string]corev1.NodeAddressType{}
-	netInterfaces, err := c.GetVmAgentNetworkInterfaces(vmr)
+	addresses, err := c.getIPsByVMRef(vmr)
 	if err != nil {
+		p.Cleanup(ctx, machine, data)
 		return nil, cloudprovidererrors.TerminalError{
 			Reason:  common.CreateMachineError,
-			Message: fmt.Sprintf("failed to get network interfaces: %v", err),
-		}
-	}
-	for _, netIf := range netInterfaces {
-		for _, ipAddr := range netIf.IPAddresses {
-			if len(ipAddr) > 0 {
-				ip := ipAddr.String()
-				addresses[ip] = corev1.NodeInternalIP
-			}
+			Message: fmt.Sprintf("failed to get IP addresses of VM: %v", err),
 		}
 	}
 

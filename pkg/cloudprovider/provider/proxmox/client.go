@@ -21,7 +21,9 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/kubermatic/machine-controller/pkg/apis/cluster/common"
 	cloudprovidererrors "github.com/kubermatic/machine-controller/pkg/cloudprovider/errors"
+	corev1 "k8s.io/api/core/v1"
 
 	"github.com/Telmate/proxmox-api-go/proxmox"
 )
@@ -71,4 +73,24 @@ func (c ClientSet) getVMRefByName(name string) (*proxmox.VmRef, error) {
 		return nil, err
 	}
 	return vmr, nil
+}
+
+func (c ClientSet) getIPsByVMRef(vmr *proxmox.VmRef) (map[string]corev1.NodeAddressType, error) {
+	addresses := map[string]corev1.NodeAddressType{}
+	netInterfaces, err := c.GetVmAgentNetworkInterfaces(vmr)
+	if err != nil {
+		return nil, cloudprovidererrors.TerminalError{
+			Reason:  common.CreateMachineError,
+			Message: fmt.Sprintf("failed to get network interfaces: %v", err),
+		}
+	}
+	for _, netIf := range netInterfaces {
+		for _, ipAddr := range netIf.IPAddresses {
+			if len(ipAddr) > 0 {
+				ip := ipAddr.String()
+				addresses[ip] = corev1.NodeInternalIP
+			}
+		}
+	}
+	return addresses, nil
 }
