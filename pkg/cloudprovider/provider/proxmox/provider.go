@@ -49,12 +49,12 @@ type Config struct {
 
 	NodeName string
 
-	CPUSockets   *int
-	CPUCores     *int
-	MemoryMB     int
-	DiskSizeGB   int
-	BridgeDevice *string
-	ImageName    string
+	VMTemplateName string
+	CPUSockets     *int
+	CPUCores       *int
+	MemoryMB       int
+	DiskName       string
+	DiskSizeGB     int
 }
 
 type provider struct {
@@ -147,18 +147,18 @@ func (p *provider) getConfig(provSpec clusterv1alpha1.ProviderSpec) (*Config, *p
 
 	config.NodeName, err = p.configVarResolver.GetConfigVarStringValueOrEnv(rawConfig.NodeName, "PM_NODE_NAME")
 
+	config.VMTemplateName = rawConfig.VMTemplateName
 	config.CPUCores = rawConfig.CPUCores
 	config.CPUSockets = rawConfig.CPUSockets
 	config.MemoryMB = rawConfig.MemoryMB
 	config.DiskSizeGB = rawConfig.DiskSizeGB
-	config.BridgeDevice = rawConfig.BridgeDevice
-	config.ImageName = rawConfig.ImageName
 
 	return &config, pconfig, rawConfig, nil
 }
 
 // AddDefaults will read the MachineSpec and apply defaults for provider specific fields
 func (*provider) AddDefaults(spec clusterv1alpha1.MachineSpec) (clusterv1alpha1.MachineSpec, error) {
+	// TODO: Check if there are default values that make sense.
 	return spec, nil
 }
 
@@ -183,25 +183,13 @@ func (p *provider) Validate(ctx context.Context, spec clusterv1alpha1.MachineSpe
 		}
 	}
 
-	// Verify client can connect to API
-	_, err = c.GetVersion()
-	if err != nil {
-		return cloudprovidererrors.TerminalError{
-			Reason:  common.InvalidConfigurationMachineError,
-			Message: fmt.Sprintf("cannot connect to proxmox API: %v", err),
-		}
-	}
-
+	// TODO: Refactoring: Extract node existence check to client method
 	nodeList, err := c.GetNodeList()
 	if err != nil {
-		return cloudprovidererrors.TerminalError{
-			Reason:  common.InvalidConfigurationMachineError,
-			Message: fmt.Sprintf("cannot fetch nodes from cluster: %v", err),
-		}
+		return fmt.Errorf("cannot fetch nodes from cluster: %v", err)
 	}
 
 	var nodeExists bool
-
 	var nl proxmoxtypes.NodeList
 
 	nodeListJson, err := json.Marshal(nodeList)
@@ -226,7 +214,21 @@ func (p *provider) Validate(ctx context.Context, spec clusterv1alpha1.MachineSpe
 		}
 	}
 
-	// TODO: Verify image exists
+	// TODO: Refactoring: Extract VM template ID existence check to client method
+	vmr, err := c.GetVmRefByName(config.VMTemplateName)
+	if err != nil {
+		return fmt.Errorf("could not retrieve VM template %q", config.VMTemplateName)
+	}
+	vmInfo, err := c.GetVmInfo(vmr)
+	if err != nil {
+		return fmt.Errorf("could not retrieve info for VM template %q", config.VMTemplateName)
+	}
+	if vmInfo["template"] != 1 {
+		return cloudprovidererrors.TerminalError{
+			Reason:  common.InvalidConfigurationMachineError,
+			Message: fmt.Sprintf("%q is not a VM template", config.VMTemplateName),
+		}
+	}
 
 	return nil
 }
@@ -265,6 +267,14 @@ func (p *provider) Create(ctx context.Context, machine *clusterv1alpha1.Machine,
 		}
 	}
 
+	sourceVmr, err := c.GetVmRefByName(config.VMTemplateName)
+	if err != nil {
+		return nil, cloudprovidererrors.TerminalError{
+			Reason:  common.InvalidConfigurationMachineError,
+			Message: fmt.Sprintf("could not retrieve VM template %q", config.VMTemplateName),
+		}
+	}
+
 	vmID, err := c.GetNextID(0)
 	if err != nil {
 		return nil, cloudprovidererrors.TerminalError{
@@ -273,58 +283,47 @@ func (p *provider) Create(ctx context.Context, machine *clusterv1alpha1.Machine,
 		}
 	}
 
-	var imageLocation string
-
-	// TODO: set imageLocation from config.ImageName and storage?
-
 	configQemu := &proxmox.ConfigQemu{
-		Name:  machine.Name,
-		Agent: enabled,
-		VmID:  vmID,
-
-		QemuIso: config.ImageName,
-		// For now only Linux 2.6 is supported
-		QemuOs: "l26",
-
-		Memory: config.MemoryMB,
-
-		QemuCpu:     "host",
-		QemuSockets: *config.CPUSockets,
-		QemuCores:   *config.CPUCores,
-
-		// Add disk created from cloud image.
-		QemuDisks: proxmox.QemuDevices{
-			0: {
-				"volume":      "local:0",
-				"import-from": imageLocation,
-				"type":        "virtio-scsi-pci",
-				"storage":     "local",
-				"backup":      false,
-			},
-		},
-
-		// TODO: Figure out correct network settings
-		QemuNetworks: proxmox.QemuDevices{
-			0: {
-				"model":  "e1000",
-				"bridge": "vmbr0",
-			},
-		},
-
-		QemuKVM:     true,
-		QemuVlanTag: -1,
+		Name:      machine.Name,
+		VmID:      vmID,
+		FullClone: proxmox.PointerInt(0),
 	}
 
 	vmr := proxmox.NewVmRef(vmID)
 	vmr.SetNode(config.NodeName)
 
-	// CreateVm polls the creation task until it has completed.
-	// It also cleans up created disks on failed VM creation.
-	err = configQemu.CreateVm(vmr, c.Client)
+	err = configQemu.CloneVm(sourceVmr, vmr, c.Client)
 	if err != nil {
 		return nil, cloudprovidererrors.TerminalError{
 			Reason:  common.CreateMachineError,
 			Message: fmt.Sprintf("failed to create VM: %v", err),
+		}
+	}
+
+	configClone, err := proxmox.NewConfigQemuFromApi(vmr, c.Client)
+	if err != nil {
+
+	}
+
+	configClone.QemuSockets = *config.CPUSockets
+	configClone.QemuCores = *config.CPUCores
+	configClone.Memory = config.MemoryMB
+
+	err = configClone.UpdateConfig(vmr, c.Client)
+	if err != nil {
+		p.Cleanup(ctx, machine, data)
+		return nil, cloudprovidererrors.TerminalError{
+			Reason:  common.CreateMachineError,
+			Message: fmt.Sprintf("failed to update VM size: %v", err),
+		}
+	}
+
+	_, err = c.ResizeQemuDiskRaw(vmr, config.DiskName, fmt.Sprintf("%dG", config.DiskSizeGB))
+	if err != nil {
+		p.Cleanup(ctx, machine, data)
+		return nil, cloudprovidererrors.TerminalError{
+			Reason:  common.CreateMachineError,
+			Message: fmt.Sprintf("failed to update disk size: %v", err),
 		}
 	}
 

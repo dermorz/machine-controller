@@ -30,12 +30,12 @@ type RawConfig struct {
 
 	NodeName providerconfigtypes.ConfigVarString `json:"nodeName"`
 
-	CPUSockets   *int    `json:"cpuSockets"`
-	CPUCores     *int    `json:"cpuCores,omitempty"`
-	MemoryMB     int     `json:"memoryMB"`
-	DiskSizeGB   int     `json:"diskSizeGB"`
-	BridgeDevice *string `json:"bridgeDevice,omitempty"`
-	ImageName    string  `json:"imageName"`
+	VMTemplateName string `json:"vmTemplate"`
+	CPUSockets     *int   `json:"cpuSockets"`
+	CPUCores       *int   `json:"cpuCores,omitempty"`
+	MemoryMB       int    `json:"memoryMB"`
+	DiskName       string `json:"diskName"`
+	DiskSizeGB     int    `json:"diskSizeGB"`
 }
 
 func GetConfig(pconfig providerconfigtypes.Config) (*RawConfig, error) {
