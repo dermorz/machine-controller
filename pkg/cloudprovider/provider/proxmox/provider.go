@@ -240,8 +240,59 @@ func (p *provider) Validate(ctx context.Context, spec clusterv1alpha1.MachineSpe
 // See v1alpha1.MachineStatus for more info and TerminalError type
 //
 // In case the instance cannot be found, github.com/kubermatic/machine-controller/pkg/cloudprovider/errors/ErrInstanceNotFound will be returned
-func (provider *provider) Get(ctx context.Context, machine *clusterv1alpha1.Machine, data *cloudprovidertypes.ProviderData) (instance.Instance, error) {
-	panic("not implemented") // TODO: Implement
+func (p *provider) Get(ctx context.Context, machine *clusterv1alpha1.Machine, data *cloudprovidertypes.ProviderData) (instance.Instance, error) {
+	config, _, _, err := p.getConfig(machine.Spec.ProviderSpec)
+	if err != nil {
+		return nil, cloudprovidererrors.TerminalError{
+			Reason:  common.InvalidConfigurationMachineError,
+			Message: fmt.Sprintf("failed to parse machineSpec: %v", err),
+		}
+	}
+
+	c, err := GetClientSet(config)
+	if err != nil {
+		return nil, cloudprovidererrors.TerminalError{
+			Reason:  common.InvalidConfigurationMachineError,
+			Message: fmt.Sprintf("failed to construct client: %v", err),
+		}
+	}
+
+	vmr, err := c.getVMRefByName(machine.Name)
+	if err != nil {
+		return nil, err
+	}
+
+	configQemu, err := proxmox.NewConfigQemuFromApi(vmr, c.Client)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch config of VM: %w", err)
+	}
+
+	addresses, err := c.getIPsByVMRef(vmr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get IP addresses of VM: %w", err)
+	}
+
+	var status instance.Status
+	vmState, err := c.GetVmState(vmr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get state of VM: %w", err)
+	}
+	switch vmState["status"] {
+	case "running":
+		status = instance.StatusRunning
+	case "stopped":
+		status = instance.StatusCreating
+	default:
+		status = instance.StatusUnknown
+	}
+
+	return &Server{
+		vmRef:      vmr,
+		configQemu: configQemu,
+		addresses:  addresses,
+		status:     status,
+	}, nil
+
 }
 
 // GetCloudConfig will return the cloud provider specific cloud-config, which gets consumed by the kubelet
