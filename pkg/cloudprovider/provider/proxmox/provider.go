@@ -221,7 +221,7 @@ func (p *provider) Validate(ctx context.Context, spec clusterv1alpha1.MachineSpe
 	}
 	vmInfo, err := c.GetVmInfo(vmr)
 	if err != nil {
-		return fmt.Errorf("could not retrieve info for VM template %q", config.VMTemplateName)
+		return fmt.Errorf("failed to retrieve info for VM template %q", config.VMTemplateName)
 	}
 	if vmInfo["template"] != 1 {
 		return cloudprovidererrors.TerminalError{
@@ -271,7 +271,7 @@ func (p *provider) Create(ctx context.Context, machine *clusterv1alpha1.Machine,
 	if err != nil {
 		return nil, cloudprovidererrors.TerminalError{
 			Reason:  common.InvalidConfigurationMachineError,
-			Message: fmt.Sprintf("could not retrieve VM template %q", config.VMTemplateName),
+			Message: fmt.Sprintf("failed to retrieve VM template %q", config.VMTemplateName),
 		}
 	}
 
@@ -302,7 +302,11 @@ func (p *provider) Create(ctx context.Context, machine *clusterv1alpha1.Machine,
 
 	configClone, err := proxmox.NewConfigQemuFromApi(vmr, c.Client)
 	if err != nil {
-
+		p.Cleanup(ctx, machine, data)
+		return nil, cloudprovidererrors.TerminalError{
+			Reason:  common.CreateMachineError,
+			Message: fmt.Sprintf("failed to fetch config of newly created VM: %v", err),
+		}
 	}
 
 	configClone.QemuSockets = *config.CPUSockets
@@ -338,7 +342,7 @@ func (p *provider) Create(ctx context.Context, machine *clusterv1alpha1.Machine,
 
 	return &Server{
 		vmRef:      vmr,
-		configQemu: configQemu,
+		configQemu: configClone,
 		addresses:  addresses,
 		status:     instance.StatusRunning,
 	}, nil
