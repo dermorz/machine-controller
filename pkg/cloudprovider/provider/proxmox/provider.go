@@ -61,6 +61,7 @@ type provider struct {
 	configVarResolver *providerconfig.ConfigVarResolver
 }
 
+// Server holds the proxmox VM information.
 type Server struct {
 	configQemu *proxmox.ConfigQemu
 	vmRef      *proxmox.VmRef
