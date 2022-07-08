@@ -99,50 +99,50 @@ func New(configVarResolver *providerconfig.ConfigVarResolver) cloudprovidertypes
 	return provider
 }
 
-func (p *provider) getConfig(provSpec clusterv1alpha1.ProviderSpec) (*Config, *providerconfigtypes.Config, *proxmoxtypes.RawConfig, error) {
+func (p *provider) getConfig(provSpec clusterv1alpha1.ProviderSpec) (*Config, error) {
 	if provSpec.Value == nil {
-		return nil, nil, nil, fmt.Errorf("machine.spec.providerconfig.value is nil")
+		return nil, fmt.Errorf("machine.spec.providerconfig.value is nil")
 	}
 
 	pconfig, err := providerconfigtypes.GetConfig(provSpec)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
 
 	if pconfig.OperatingSystemSpec.Raw == nil {
-		return nil, nil, nil, errors.New("operatingSystemSpec in the MachineDeployment cannot be empty")
+		return nil, errors.New("operatingSystemSpec in the MachineDeployment cannot be empty")
 	}
 
 	rawConfig, err := proxmoxtypes.GetConfig(*pconfig)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
 
 	config := Config{}
 
 	config.Endpoint, err = p.configVarResolver.GetConfigVarStringValueOrEnv(rawConfig.Endpoint, "PM_API_URL")
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
 
 	config.UserID, err = p.configVarResolver.GetConfigVarStringValueOrEnv(rawConfig.UserID, "PM_API_USER_ID")
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
 
 	config.Token, err = p.configVarResolver.GetConfigVarStringValueOrEnv(rawConfig.UserID, "PM_API_TOKEN")
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
 
 	config.TLSInsecure, err = p.configVarResolver.GetConfigVarBoolValueOrEnv(rawConfig.AllowInsecure, "PM_TLS_INSECURE")
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
 
 	config.ProxyURL, err = p.configVarResolver.GetConfigVarStringValueOrEnv(rawConfig.ProxyURL, "PM_PROXY_URL")
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
 
 	config.NodeName, err = p.configVarResolver.GetConfigVarStringValueOrEnv(rawConfig.NodeName, "PM_NODE_NAME")
@@ -153,7 +153,7 @@ func (p *provider) getConfig(provSpec clusterv1alpha1.ProviderSpec) (*Config, *p
 	config.MemoryMB = rawConfig.MemoryMB
 	config.DiskSizeGB = rawConfig.DiskSizeGB
 
-	return &config, pconfig, rawConfig, nil
+	return &config, nil
 }
 
 // AddDefaults will read the MachineSpec and apply defaults for provider specific fields
@@ -167,7 +167,7 @@ func (*provider) AddDefaults(spec clusterv1alpha1.MachineSpec) (clusterv1alpha1.
 // In case of any error a "terminal" error should be set,
 // See v1alpha1.MachineStatus for more info
 func (p *provider) Validate(ctx context.Context, spec clusterv1alpha1.MachineSpec) error {
-	config, _, _, err := p.getConfig(spec.ProviderSpec)
+	config, err := p.getConfig(spec.ProviderSpec)
 	if err != nil {
 		return cloudprovidererrors.TerminalError{
 			Reason:  common.InvalidConfigurationMachineError,
@@ -241,7 +241,7 @@ func (p *provider) Validate(ctx context.Context, spec clusterv1alpha1.MachineSpe
 //
 // In case the instance cannot be found, github.com/kubermatic/machine-controller/pkg/cloudprovider/errors/ErrInstanceNotFound will be returned
 func (p *provider) Get(ctx context.Context, machine *clusterv1alpha1.Machine, data *cloudprovidertypes.ProviderData) (instance.Instance, error) {
-	config, _, _, err := p.getConfig(machine.Spec.ProviderSpec)
+	config, err := p.getConfig(machine.Spec.ProviderSpec)
 	if err != nil {
 		return nil, cloudprovidererrors.TerminalError{
 			Reason:  common.InvalidConfigurationMachineError,
@@ -300,9 +300,8 @@ func (provider *provider) GetCloudConfig(spec clusterv1alpha1.MachineSpec) (conf
 	panic("not implemented") // TODO: Implement
 }
 
-// Create creates a cloud instance according to the given machine
 func (p *provider) Create(ctx context.Context, machine *clusterv1alpha1.Machine, data *cloudprovidertypes.ProviderData, userdata string) (instance.Instance, error) {
-	config, _, _, err := p.getConfig(machine.Spec.ProviderSpec)
+	config, err := p.getConfig(machine.Spec.ProviderSpec)
 	if err != nil {
 		return nil, cloudprovidererrors.TerminalError{
 			Reason:  common.InvalidConfigurationMachineError,
@@ -399,12 +398,8 @@ func (p *provider) Create(ctx context.Context, machine *clusterv1alpha1.Machine,
 	}, nil
 }
 
-// Cleanup will delete the instance associated with the machine and all associated resources.
-// If all resources have been cleaned up, true will be returned.
-// In case the cleanup involves asynchronous deletion of resources & those resources are not gone yet,
-// false should be returned. This is to indicate that the cleanup is not done, but needs to be called again at a later point
 func (p *provider) Cleanup(ctx context.Context, machine *clusterv1alpha1.Machine, data *cloudprovidertypes.ProviderData) (bool, error) {
-	config, _, _, err := p.getConfig(machine.Spec.ProviderSpec)
+	config, err := p.getConfig(machine.Spec.ProviderSpec)
 	if err != nil {
 		return false, cloudprovidererrors.TerminalError{
 			Reason:  common.InvalidConfigurationMachineError,
