@@ -18,7 +18,6 @@ package proxmox
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -163,10 +162,6 @@ func (*provider) AddDefaults(spec clusterv1alpha1.MachineSpec) (clusterv1alpha1.
 	return spec, nil
 }
 
-// Validate validates the given machine's specification.
-//
-// In case of any error a "terminal" error should be set,
-// See v1alpha1.MachineStatus for more info
 func (p *provider) Validate(ctx context.Context, spec clusterv1alpha1.MachineSpec) error {
 	config, err := p.getConfig(spec.ProviderSpec)
 	if err != nil {
@@ -184,63 +179,31 @@ func (p *provider) Validate(ctx context.Context, spec clusterv1alpha1.MachineSpe
 		}
 	}
 
-	// TODO: Refactoring: Extract node existence check to client method
-	nodeList, err := c.GetNodeList()
-	if err != nil {
-		return fmt.Errorf("cannot fetch nodes from cluster: %v", err)
-	}
-
-	var nodeExists bool
-	var nl proxmoxtypes.NodeList
-
-	nodeListJson, err := json.Marshal(nodeList)
-	if err != nil {
-		return fmt.Errorf("marshalling nodeList to JSON: %w", err)
-	}
-	err = json.Unmarshal(nodeListJson, &nl)
-	if err != nil {
-		return fmt.Errorf("unmarshalling JSON to NodeList: %w", err)
-	}
-
-	for _, n := range nl.Data {
-		if n.Node == config.NodeName {
-			nodeExists = true
-			break
-		}
-	}
-	if !nodeExists {
-		return cloudprovidererrors.TerminalError{
-			Reason:  common.InvalidConfigurationMachineError,
-			Message: fmt.Sprintf("node %q does not exist", config.NodeName),
+	if nodeExists, err := c.checkNodeExists(config.NodeName); err != nil {
+		return err
+	} else {
+		if !nodeExists {
+			return cloudprovidererrors.TerminalError{
+				Reason:  common.InvalidConfigurationMachineError,
+				Message: fmt.Sprintf("node %q does not exist", config.NodeName),
+			}
 		}
 	}
 
-	// TODO: Refactoring: Extract VM template ID existence check to client method
-	vmr, err := c.GetVmRefByName(config.VMTemplateName)
-	if err != nil {
-		return fmt.Errorf("could not retrieve VM template %q", config.VMTemplateName)
-	}
-	vmInfo, err := c.GetVmInfo(vmr)
-	if err != nil {
-		return fmt.Errorf("failed to retrieve info for VM template %q", config.VMTemplateName)
-	}
-	if vmInfo["template"] != 1 {
-		return cloudprovidererrors.TerminalError{
-			Reason:  common.InvalidConfigurationMachineError,
-			Message: fmt.Sprintf("%q is not a VM template", config.VMTemplateName),
+	if templateExists, err := c.checkTemplateExists(config.VMTemplateName); err != nil {
+		return err
+	} else {
+		if !templateExists {
+			return cloudprovidererrors.TerminalError{
+				Reason:  common.InvalidConfigurationMachineError,
+				Message: fmt.Sprintf("%q is not a VM template", config.VMTemplateName),
+			}
 		}
 	}
 
 	return nil
 }
 
-// Get gets a node that is associated with the given machine.
-//
-// Note that this method can return what we call a "terminal" error,
-// which indicates that a manual interaction is required to recover from this state.
-// See v1alpha1.MachineStatus for more info and TerminalError type
-//
-// In case the instance cannot be found, github.com/kubermatic/machine-controller/pkg/cloudprovider/errors/ErrInstanceNotFound will be returned
 func (p *provider) Get(ctx context.Context, machine *clusterv1alpha1.Machine, data *cloudprovidertypes.ProviderData) (instance.Instance, error) {
 	config, err := p.getConfig(machine.Spec.ProviderSpec)
 	if err != nil {
