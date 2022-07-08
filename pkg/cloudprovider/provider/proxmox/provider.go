@@ -259,9 +259,8 @@ func (p *provider) Get(ctx context.Context, machine *clusterv1alpha1.Machine, da
 
 }
 
-// GetCloudConfig will return the cloud provider specific cloud-config, which gets consumed by the kubelet
 func (provider *provider) GetCloudConfig(spec clusterv1alpha1.MachineSpec) (config string, name string, err error) {
-	panic("not implemented") // TODO: Implement
+	return "", "", nil
 }
 
 func (p *provider) Create(ctx context.Context, machine *clusterv1alpha1.Machine, data *cloudprovidertypes.ProviderData, userdata string) (instance.Instance, error) {
