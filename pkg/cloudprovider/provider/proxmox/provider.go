@@ -415,7 +415,7 @@ func (p *provider) Cleanup(ctx context.Context, machine *clusterv1alpha1.Machine
 		}
 	}
 
-	vmr, err := c.GetVmRefByName(machine.Name)
+	vmr, err := c.getVMRefByName(machine.Name)
 	if err != nil {
 		if cloudprovidererrors.IsNotFound(err) {
 			// VM is already gone
