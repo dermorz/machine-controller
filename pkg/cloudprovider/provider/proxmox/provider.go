@@ -436,23 +436,25 @@ func (p *provider) Cleanup(ctx context.Context, machine *clusterv1alpha1.Machine
 	return exitStatus == exitStatusSuccess, err
 }
 
-// MachineMetricsLabels returns labels used for the Prometheus metrics
-// about created machines, e.g. instance type, instance size, region
-// or whatever the provider deems interesting. Should always return
-// a "size" label.
-// This should not do any api calls to the cloud provider
-func (provider *provider) MachineMetricsLabels(machine *clusterv1alpha1.Machine) (map[string]string, error) {
-	panic("not implemented") // TODO: Implement
+func (p *provider) MachineMetricsLabels(machine *clusterv1alpha1.Machine) (map[string]string, error) {
+	labels := make(map[string]string)
+
+	config, err := p.getConfig(machine.Spec.ProviderSpec)
+	if err != nil {
+		return labels, fmt.Errorf("failed to parse config: %w", err)
+	}
+
+	labels["size"] = fmt.Sprintf("%d-cpus-%d-mb", config.CPUSockets, config.MemoryMB)
+	labels["node"] = config.NodeName
+	labels["template"] = config.VMTemplateName
+
+	return labels, nil
 }
 
-// MigrateUID is called when the controller migrates types and the UID of the machine object changes
-// All cloud providers that use Machine.UID to uniquely identify resources must implement this
-func (provider *provider) MigrateUID(ctx context.Context, machine *clusterv1alpha1.Machine, newUID types.UID) error {
-	panic("not implemented") // TODO: Implement
+func (*provider) MigrateUID(ctx context.Context, machine *clusterv1alpha1.Machine, newUID types.UID) error {
+	return nil
 }
 
-// SetMetricsForMachines allows providers to provide provider-specific metrics. This may be implemented
-// as no-op
-func (provider *provider) SetMetricsForMachines(machines clusterv1alpha1.MachineList) error {
-	panic("not implemented") // TODO: Implement
+func (*provider) SetMetricsForMachines(machines clusterv1alpha1.MachineList) error {
+	return nil
 }
