@@ -74,6 +74,7 @@ func (c ClientSet) getVMRefByName(name string) (*proxmox.VmRef, error) {
 		}
 		return nil, err
 	}
+
 	return vmr, nil
 }
 
@@ -136,5 +137,6 @@ func (c ClientSet) getIPsByVMRef(vmr *proxmox.VmRef) (map[string]corev1.NodeAddr
 			}
 		}
 	}
+
 	return addresses, nil
 }
