@@ -13,6 +13,28 @@ See also:
 * https://pve.proxmox.com/wiki/User_Management#pveum_tokens
 * https://pve.proxmox.com/wiki/Proxmox_VE_API#API_Tokens
 
+#### User Privileges
+
+For the provider to properly function the user needs an API token with the following privileges:
+
+* `Datastore.AllocateSpace`
+* `Pool.Allocate`
+* `Pool.Audit`
+* `VM.Allocate`
+* `VM.Audit`
+* `VM.Clone`
+* `VM.Config.CDROM`
+* `VM.Config.CPU`
+* `VM.Config.Cloudinit`
+* `VM.Config.Disk`
+* `VM.Config.HWType`
+* `VM.Config.Memory`
+* `VM.Config.Network`
+* `VM.Config.Options`
+* `VM.Monitor`
+* `Sys.Audit`
+* `Sys.Console`
+
 ### Cloud-Init enabled VM Templates
 
 Although it is possible to upload Cloud-Init images in Proxmox VE and create VM disks directly from
@@ -44,5 +66,3 @@ qm set $INSTANCE_ID -ide2 local:cloudinit
 qm resize $INSTANCE_ID virtio0 2G
 qm template $INSTANCE_ID
 ```
-
-
